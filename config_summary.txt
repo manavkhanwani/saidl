@@ -1,0 +1,47 @@
+================================================================================
+HYPERPARAMETER CONFIGURATION SUMMARY
+================================================================================
+
+All experiments in this submission use the following configuration (config.py),
+unless explicitly overridden (e.g. extrapolation test uses L_train=512).
+
+Model Architecture:
+  n_embd        = 128       # embedding / hidden dimension
+  n_head        = 4         # number of attention heads
+  n_layer       = 2         # number of Transformer blocks
+  dropout       = 0.2       # dropout rate (applied in attention + feedforward)
+  head_size     = 32        # n_embd // n_head = 128 // 4
+
+Context / Sequence:
+  block_size    = 64        # context window length (training)
+  L_train       = 512       # context length for extrapolation training run
+  L_test        = 1024      # context length for extrapolation evaluation
+
+Training:
+  batch_size    = 16        # sequences per batch
+  max_iters     = 500       # total gradient steps
+  eval_interval = 50        # evaluate every N steps
+  eval_iters    = 100       # batches averaged for loss estimate
+  learning_rate = 3e-4      # AdamW learning rate
+
+Optimizer:
+  Type          : AdamW (Adam with weight decay)
+  Betas         : (0.9, 0.999)  [PyTorch defaults]
+  Weight decay  : 0.01          [PyTorch default]
+
+Dataset:
+  Source        : WikiText-2
+  Tokenisation  : Character-level (each unique character is one token)
+  Vocab size    : ~96 unique characters
+  Split         : 90% train / 10% val (from train.txt)
+
+Attention-specific:
+  Sliding Window window_size  = 16
+  Relative PE max_relative_pos = 16
+
+Approximate model size (baseline):
+  ~0.4M parameters  (tiny — designed for CPU/Colab demo purposes)
+
+Device:
+  CPU (no GPU used in reported runs)
+  Peak GPU memory: 0 MB

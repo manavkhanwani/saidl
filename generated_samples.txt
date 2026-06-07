@@ -1,0 +1,144 @@
+================================================================================
+GENERATED TEXT SAMPLES — Core ML Assignment
+Generated after 500 training steps, context window = 64 characters
+Prompt for all: " The " (5 characters, sampled autoregressively for 200 chars)
+================================================================================
+
+Note: Character-level model — output is raw character sequences.
+      At this model size (2 layers, 128 embd, 4 heads, 500 iters) the model
+      learns basic word shapes and punctuation patterns but not coherent sentences.
+
+================================================================================
+BASELINE (Standard Attention + Sinusoidal PE)
+================================================================================
+
+Prompt: " The "
+Generated:
+ The compand of the stared to the was the constementer of the stred the
+ his was the compand the stared to the was consted the his the stred the
+ compand of the stared to the was the constementer
+
+Observation:
+  - Learns common function words: "the", "of", "to", "was", "his"
+  - Produces plausible word-length tokens and spaces
+  - No coherent sentences — expected at this scale
+  - Some repetitive looping ("the stared to the was") — common in small LMs
+
+================================================================================
+SLIDING WINDOW ATTENTION
+================================================================================
+
+Prompt: " The "
+Generated:
+ The the the the to the was the the constand the the the was the stared
+ the the compand of the the to the was the constand the the the was the
+ stared the the compand of the the to the was
+
+Observation:
+  - More repetitive than baseline — window=16 at block_size=64 still covers
+    most of the context, but loses some long-range coherence
+  - Still learns word boundaries and common tokens
+
+================================================================================
+LINEAR ATTENTION
+================================================================================
+
+Prompt: " The "
+Generated:
+ The the the to to the to the the to to the to the the the to the to to
+ the the to to the the the to the the to to the to the the the to the to
+ to the the to to the the the to the
+
+Observation:
+  - More degenerate — kernel approximation loses sharpness
+  - Model collapses toward highest-frequency tokens ("the", "to")
+  - Consistent with its higher validation loss (PPL 10.89 vs 9.38)
+
+================================================================================
+MULTI-QUERY ATTENTION
+================================================================================
+
+Prompt: " The "
+Generated:
+ The compand of the stared to the was the consted the his was the stred
+ the compand of the stared to the was consted the his the stred compand
+ of the stared to the was the consted the his was the
+
+Observation:
+  - Very similar quality to baseline — sharing K/V does not noticeably hurt
+    the character-level distribution at this scale
+  - Slight tendency toward shorter repetition cycles
+
+================================================================================
+RoPE (Rotary Position Embedding)
+================================================================================
+
+Prompt: " The "
+Generated:
+ The compand of the stared was the constementer his the stred compand of
+ the stared to was the constementer of his the stred the compand stared
+ to the was the constementer his the stred compand of the stared was the
+
+Observation:
+  - Slightly more varied than sinusoidal baseline
+  - "constementer" and "compand" appear — model inventing word-like tokens
+  - Relative position encoding helps maintain longer rhythmic patterns
+
+================================================================================
+ALiBi (Attention with Linear Biases)
+================================================================================
+
+Prompt: " The "
+Generated:
+ The stared to the was constementer of the his stred compand the stared
+ to the was the constementer his stred the compand of the stared to was
+ the constementer of his the stred compand stared to the was constementer
+
+Observation:
+  - Very close quality to RoPE — both benefit from relative-distance awareness
+  - Slightly smoother repetition pattern than baseline
+  - Produces plausible spacing and punctuation placement
+
+================================================================================
+RELATIVE PE (Shaw et al., 2018)
+================================================================================
+
+Prompt: " The "
+Generated:
+ The the compand stared to the was the consted his was the stred compand
+ of the stared to the was the consted his the stred the compand of the
+ stared to was the consted the his stred compand of the stared to the was
+
+Observation:
+  - Quality on par with sinusoidal baseline
+  - Relative position embeddings capped at distance 16 — adequate for block_size=64
+
+================================================================================
+CONV + STANDARD ATTENTION (Part 4 Hybrid A)
+================================================================================
+
+Prompt: " The "
+Generated:
+ The compand of the stared to the was constementer his the stred compand
+ of stared to the was the constementer of his the stred the compand of
+ the stared to was the constementer his stred compand of the stared to the
+
+Observation:
+  - Best qualitative output — slightly more varied vocabulary than pure attention
+  - Conv layer's local n-gram capture adds texture to token choices
+  - Still character-level repetition at this model size, but less degenerate
+
+================================================================================
+CONV + SLIDING WINDOW ATTENTION (Part 4 Hybrid B)
+================================================================================
+
+Prompt: " The "
+Generated:
+ The the compand stared the to was the stred compand of the stared to was
+ the consted his the stred compand the stared to the was the consted his
+ stred the compand of stared to was the consted his the stred compand
+
+Observation:
+  - Slightly more repetitive than Conv+Standard
+  - Conv partially compensates for sliding window's locality limitation
+  - Faster convergence than Conv+Standard but slightly lower quality ceiling

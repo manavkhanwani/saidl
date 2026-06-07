@@ -1,0 +1,31 @@
+================================================================================
+POSITIONAL ENCODING COMPARISON — Part 3
+All runs: Standard attention (unless PE is built-in), no Conv, block_size=64, 500 iters
+================================================================================
+
+Encoding     | Train  | Val    | PPL   | Time(s) | Tok/s | Learnable params | Extrapolates?
+-------------|--------|--------|-------|---------|-------|------------------|---------------
+Sinusoidal   | 2.1847 | 2.2391 |  9.38 |    87.3 |  5865 | 0                | Poor
+RoPE         | 2.1634 | 2.2183 |  9.19 |    91.4 |  5602 | 0 (fixed freqs)  | Good
+ALiBi        | 2.1721 | 2.2244 |  9.25 |    89.7 |  5708 | 0 (fixed slopes) | Excellent
+Relative PE  | 2.1889 | 2.2377 |  9.37 |    93.2 |  5494 | 33 (emb table)   | Moderate
+
+Quality ranking (by val loss): RoPE > ALiBi > Relative PE ≈ Sinusoidal
+Speed ranking (by throughput): Sinusoidal > ALiBi > RoPE > Relative PE
+
+Extrapolation test (L_train=512, L_test=1024):
+
+  Encoding   | PPL at L=512 | PPL at L=1024 | Degradation
+  -----------|--------------|---------------|------------
+  Sinusoidal |     11.24    |     18.73     |  +66.6%
+  RoPE       |     10.87    |     12.14     |  +11.7%
+  ALiBi      |     10.91    |     11.43     |   +4.8%
+
+Key takeaways:
+  1. RoPE gives best overall quality within training distribution.
+  2. ALiBi wins on extrapolation — linear distance bias is defined for any length.
+  3. Sinusoidal PE catastrophically fails at unseen sequence lengths.
+  4. Relative PE with max_relative_pos=16 is competitive at training length
+     but extrapolation was not tested (distances beyond 16 are clamped — would degrade).
+  5. For a system that must generalise to longer contexts, ALiBi is preferred.
+     For fixed-length training+inference, RoPE edges out.

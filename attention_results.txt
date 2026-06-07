@@ -1,0 +1,23 @@
+================================================================================
+ATTENTION VARIANT COMPARISON — Part 2
+All runs: Sinusoidal PE, no Conv, block_size=64, 500 iters
+================================================================================
+
+Variant           | Train  | Val    | PPL   | Time(s) | Tok/s | Notes
+------------------|--------|--------|-------|---------|-------|-------------------------------
+Baseline (Std)    | 2.1847 | 2.2391 |  9.38 |    87.3 |  5865 | O(T²), full attention
+Sliding Window    | 2.2103 | 2.2614 |  9.60 |    79.6 |  6432 | window=16, O(T*w)
+Linear Attention  | 2.3451 | 2.3882 | 10.89 |    74.2 |  6900 | O(T), kernel approx (ELU+1)
+Multi-Query (MQA) | 2.1992 | 2.2508 |  9.50 |    82.1 |  6236 | shared K/V, smaller KV cache
+
+Quality ranking (by val loss):    Baseline > MQA > Sliding Window > Linear
+Speed ranking (by throughput):    Linear > Sliding Window > MQA > Baseline
+
+Key takeaways:
+  1. MQA: virtually no quality loss vs baseline (ΔPPl = +0.12) with 6% speedup.
+     Best trade-off for inference-sensitive applications.
+  2. Sliding Window: moderate quality drop (+0.22 PPL) with 10% speedup.
+     Benefits would compound at longer sequences (block_size >> 64).
+  3. Linear Attention: noticeably weaker at short sequences (block_size=64).
+     The ELU+1 kernel approximation loses attention sharpness.
+     At T > 1024 the O(T) cost advantage would become significant.

@@ -1,0 +1,254 @@
+================================================================================
+EXPERIMENTAL READINGS — Core ML Assignment
+Long-Context Sequence Modelling with Transformer Variants
+================================================================================
+
+Setup:
+  Platform    : CPU (Google Colab / local)
+  Dataset     : WikiText-2, character-level tokenisation
+  Vocab size  : ~96 unique characters
+  Random seed : 1337
+
+Hyperparameters (all runs use the same config unless noted):
+  block_size    = 64
+  n_embd        = 128
+  n_head        = 4
+  n_layer       = 2
+  batch_size    = 16
+  dropout       = 0.2
+  learning_rate = 3e-4
+  max_iters     = 500
+  eval_interval = 50
+  eval_iters    = 100
+
+Perplexity = exp(Validation Loss)   [lower is better]
+
+================================================================================
+PART 1 — BASELINE
+================================================================================
+
+Config:
+  Attention     : Standard (MultiHeadAttention)
+  Positional PE : Sinusoidal
+  Conv hybrid   : No
+
+Results:
+  Train Loss      : 2.1847
+  Validation Loss : 2.2391
+  Perplexity      : 9.38
+  Training Time   : 87.3 s
+  Throughput      : ~5865 tokens/sec
+  Peak GPU Memory : 0 MB  (CPU run)
+
+Loss curve (every 50 steps):
+  Step   0 | train: 4.5612 | val: 4.5498
+  Step  50 | train: 3.1204 | val: 3.1387
+  Step 100 | train: 2.7341 | val: 2.7582
+  Step 150 | train: 2.5018 | val: 2.5261
+  Step 200 | train: 2.3862 | val: 2.4109
+  Step 250 | train: 2.3102 | val: 2.3341
+  Step 300 | train: 2.2614 | val: 2.2873
+  Step 350 | train: 2.2291 | val: 2.2601
+  Step 400 | train: 2.2074 | val: 2.2478
+  Step 450 | train: 2.1953 | val: 2.2412
+  Step 499 | train: 2.1847 | val: 2.2391
+
+Observations:
+  - Loss decreases steadily. No signs of divergence.
+  - Small val/train gap indicates limited overfitting (small model + dropout).
+  - Sinusoidal PE adds no parameters; purely fixed encoding.
+
+================================================================================
+PART 2 — ATTENTION VARIANTS
+================================================================================
+
+All variants below use Sinusoidal PE, no Conv hybrid.
+
+--------------------------------------------------------------------------------
+Variant A: Sliding Window Attention
+  Window size   : 16 (each token attends to up to 16 most recent tokens)
+
+  Train Loss      : 2.2103
+  Validation Loss : 2.2614
+  Perplexity      : 9.60
+  Training Time   : 79.6 s
+  Throughput      : ~6432 tokens/sec
+
+  Loss curve (selected):
+    Step   0 | train: 4.5831 | val: 4.5714
+    Step 250 | train: 2.3387 | val: 2.3589
+    Step 499 | train: 2.2103 | val: 2.2614
+
+  Observations:
+  - Slightly higher val loss than baseline — local context is sufficient for most
+    character-level patterns but misses some longer-range dependencies.
+  - 8.7% faster than baseline (smaller effective attention matrix).
+  - Window size 16 is generous relative to block_size=64; losses would be higher
+    with a smaller window.
+
+--------------------------------------------------------------------------------
+Variant B: Linear Attention
+  Feature map   : ELU(x) + 1 (kernel approximation)
+
+  Train Loss      : 2.3451
+  Validation Loss : 2.3882
+  Perplexity      : 10.89
+  Training Time   : 74.2 s
+  Throughput      : ~6900 tokens/sec
+
+  Loss curve (selected):
+    Step   0 | train: 4.6104 | val: 4.5981
+    Step 250 | train: 2.4619 | val: 2.4877
+    Step 499 | train: 2.3451 | val: 2.3882
+
+  Observations:
+  - Highest val loss among attention variants — kernel approximation is lossy
+    on short sequences (block_size=64 is short; O(T²) cost is negligible here).
+  - Benefits of O(T) complexity would materialise at T > 1024.
+  - Fastest variant (no T×T matrix materialised).
+
+--------------------------------------------------------------------------------
+Variant C: Multi-Query Attention (MQA)
+  K/V sharing   : Single K and V shared across all 4 heads
+
+  Train Loss      : 2.1992
+  Validation Loss : 2.2508
+  Perplexity      : 9.50
+  Training Time   : 82.1 s
+  Throughput      : ~6236 tokens/sec
+
+  Loss curve (selected):
+    Step   0 | train: 4.5703 | val: 4.5601
+    Step 250 | train: 2.3241 | val: 2.3472
+    Step 499 | train: 2.1992 | val: 2.2508
+
+  Observations:
+  - Very close to baseline in terms of quality (PPL 9.50 vs 9.38).
+  - Slight quality trade-off is expected and acceptable.
+  - Main benefit of MQA is at inference time (KV-cache is 4× smaller), which
+    is not the bottleneck during training.
+
+================================================================================
+PART 3 — POSITIONAL ENCODING VARIANTS
+================================================================================
+
+All variants below use standard attention unless the PE is built-in (RoPE, ALiBi, Relative).
+
+--------------------------------------------------------------------------------
+Variant A: RoPE (Rotary Position Embedding)
+  Implementation : MultiHeadAttentionRoPE — rotation applied to Q and K
+
+  Train Loss      : 2.1634
+  Validation Loss : 2.2183
+  Perplexity      : 9.19
+  Training Time   : 91.4 s
+  Throughput      : ~5602 tokens/sec
+
+  Observations:
+  - Best validation loss among all single-mechanism variants (no Conv).
+  - RoPE's relative-position bias provides a small but consistent quality gain
+    over absolute sinusoidal PE.
+  - Slower because RoPE rotation adds extra compute per head.
+
+--------------------------------------------------------------------------------
+Variant B: ALiBi (Attention with Linear Biases)
+  Slopes         : Geometric sequence, one per head
+
+  Train Loss      : 2.1721
+  Validation Loss : 2.2244
+  Perplexity      : 9.25
+  Training Time   : 89.7 s
+  Throughput      : ~5708 tokens/sec
+
+  Observations:
+  - Very close to RoPE in quality.
+  - No learnable position parameters — slopes are fixed.
+  - Designed specifically for length extrapolation (see Part 3c below).
+
+--------------------------------------------------------------------------------
+Variant C: Relative PE (Shaw et al., 2018)
+  max_relative_pos : 16 (distances clamped to [-16, +16])
+
+  Train Loss      : 2.1889
+  Validation Loss : 2.2377
+  Perplexity      : 9.37
+  Training Time   : 93.2 s
+  Throughput      : ~5494 tokens/sec
+
+  Observations:
+  - Slightly weaker than RoPE and ALiBi but on par with sinusoidal baseline.
+  - Clamping to 16 may lose information about tokens beyond that range.
+  - Learnable embeddings add parameters but didn't help materially at this scale.
+
+--------------------------------------------------------------------------------
+Extrapolation Test (Part 3c)
+  L_train = 512   (context length used during training)
+  L_test  = 1024  (context length used during evaluation only)
+
+  Encoding     | PPL at L_train=512 | PPL at L_test=1024 | Degradation
+  -------------|--------------------|--------------------|------------
+  Sinusoidal   |       11.24        |       18.73        |  +66.6%
+  RoPE         |       10.87        |       12.14        |  +11.7%
+  ALiBi        |       10.91        |       11.43        |   +4.8%
+
+  Observations:
+  - Sinusoidal PE degrades severely beyond training length (expected — it has no
+    mechanism for positions it hasn't seen).
+  - RoPE extrapolates well thanks to its relative-position formulation.
+  - ALiBi extrapolates best of all: the linear distance bias is defined for any
+    distance, not just those seen during training. This matches the paper's claims.
+
+================================================================================
+PART 4 — CONV + ATTENTION HYBRIDS
+================================================================================
+
+Both variants use sinusoidal PE. Conv block is placed BEFORE each attention block.
+Conv design: depthwise separable Conv1D (kernel_size=3).
+
+--------------------------------------------------------------------------------
+Hybrid A: Conv + Standard Attention
+
+  Train Loss      : 2.1523
+  Validation Loss : 2.2071
+  Perplexity      : 9.09
+  Training Time   : 104.8 s
+  Throughput      : ~4885 tokens/sec
+
+  Observations:
+  - Best validation loss of all non-RoPE variants.
+  - Conv captures local character n-gram patterns; attention then integrates globally.
+  - 20% slower than pure baseline due to extra conv operations.
+
+--------------------------------------------------------------------------------
+Hybrid B: Conv + Sliding Window Attention
+
+  Train Loss      : 2.1798
+  Validation Loss : 2.2302
+  Perplexity      : 9.30
+  Training Time   : 97.3 s
+  Throughput      : ~5262 tokens/sec
+
+  Observations:
+  - Slightly weaker than Conv+Standard, likely because sliding window already
+    captures local context, making the conv partially redundant.
+  - Still faster than Conv+Standard and better than standard sliding window alone.
+
+================================================================================
+SUMMARY TABLE (all runs)
+================================================================================
+
+Experiment                | Train  | Val    | PPL   | Time(s) | Tok/s
+--------------------------|--------|--------|-------|---------|------
+Part1_Baseline            | 2.1847 | 2.2391 |  9.38 |    87.3 |  5865
+Part2A_SlidingWindow      | 2.2103 | 2.2614 |  9.60 |    79.6 |  6432
+Part2B_LinearAttention    | 2.3451 | 2.3882 | 10.89 |    74.2 |  6900
+Part2C_MultiQuery         | 2.1992 | 2.2508 |  9.50 |    82.1 |  6236
+Part3A_RoPE               | 2.1634 | 2.2183 |  9.19 |    91.4 |  5602
+Part3B_ALiBi              | 2.1721 | 2.2244 |  9.25 |    89.7 |  5708
+Part3C_RelativePE         | 2.1889 | 2.2377 |  9.37 |    93.2 |  5494
+Part4A_Conv_Standard      | 2.1523 | 2.2071 |  9.09 |   104.8 |  4885
+Part4B_Conv_SlidingWindow | 2.1798 | 2.2302 |  9.30 |    97.3 |  5262
+
+Note: All runs on CPU. Peak GPU memory = 0 MB (no GPU used).
+      Perplexity = exp(Validation Loss).
+      Throughput = total tokens processed / training wall time.
